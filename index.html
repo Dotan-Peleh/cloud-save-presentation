@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cloud Save — Game Center & Google Play</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #080b1a;
+  --bg-surface: #0d1128;
+  --bg-card: #131836;
+  --accent-blue: #4f8fff;
+  --accent-cyan: #00e5ff;
+  --accent-purple: #a855f7;
+  --accent-pink: #f472b6;
+  --accent-green: #34d399;
+  --accent-amber: #fbbf24;
+  --accent-red: #f87171;
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892b0;
+  --text-dim: #4a5578;
+  --glass: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --radius: 16px;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'Outfit', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Slide Engine ── */
+.deck { position: relative; width: 100%; height: 100%; }
+
+.slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  padding: 60px 80px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(30px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s 0.5s;
+  overflow-y: auto;
+}
+
+.slide.active {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0s 0s;
+}
+
+.slide.enter-from-above {
+  transform: translateY(-30px) scale(0.98);
+}
+
+.slide.exit-up {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-40px) scale(0.97);
+}
+
+.slide.exit-down {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(40px) scale(0.97);
+}
+
+/* ── Background Effects ── */
+.bg-mesh {
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 20%, rgba(79, 143, 255, 0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 80% 80%, rgba(168, 85, 247, 0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(0, 229, 255, 0.03) 0%, transparent 60%);
+}
+
+.noise-overlay {
+  position: fixed; inset: 0; z-index: -1;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px;
+}
+
+/* ── Progress Bar ── */
+.progress-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: 3px; z-index: 100;
+  background: rgba(255,255,255,0.04);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.3);
+}
+
+/* ── Slide Counter ── */
+.slide-counter {
+  position: fixed; bottom: 20px; right: 40px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; color: var(--text-dim);
+  z-index: 100; letter-spacing: 0.05em;
+}
+.slide-counter .current { color: var(--accent-cyan); font-weight: 600; }
+
+/* ── Nav Arrows ── */
+.nav-arrows {
+  position: fixed; bottom: 16px; left: 40px;
+  display: flex; gap: 8px; z-index: 100;
+}
+.nav-btn {
+  width: 36px; height: 36px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--glass);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+}
+.nav-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  background: rgba(0, 229, 255, 0.05);
+}
+
+/* ── Typography ── */
+.slide-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 500;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--accent-cyan);
+  margin-bottom: 16px;
+  opacity: 0.8;
+}
+
+.slide-title {
+  font-size: clamp(32px, 4.5vw, 56px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 20px;
+}
+
+.slide-subtitle {
+  font-size: clamp(16px, 1.8vw, 22px);
+  font-weight: 300;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 700px;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-warm {
+  background: linear-gradient(135deg, var(--accent-amber), var(--accent-pink));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Card Grid ── */
+.card-grid {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 1100px;
+  margin-top: 20px;
+}
+.card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.card-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.card-grid.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s, border-color 0.3s;
+}
+.card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,0.1);
+}
+.card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--card-accent, linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)));
+}
+.card-icon {
+  font-size: 28px;
+  margin-bottom: 14px;
+  display: block;
+}
+.card-title {
+  font-size: 16px; font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.card-body {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* ── Flow / Pipeline ── */
+.flow-pipeline {
+  display: flex; align-items: center;
+  gap: 0; margin: 24px 0;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.flow-step {
+  display: flex; align-items: center;
+  gap: 0;
+}
+.flow-node {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 14px 20px;
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap;
+  position: relative;
+}
+.flow-node .flow-icon {
+  font-size: 18px;
+  margin-bottom: 6px;
+  display: block;
+}
+.flow-arrow {
+  color: var(--accent-cyan);
+  font-size: 18px;
+  padding: 0 8px;
+  opacity: 0.5;
+}
+
+/* ── Priority Ladder ── */
+.ladder {
+  display: flex; flex-direction: column;
+  gap: 12px; width: 100%; max-width: 600px;
+  margin: 20px 0;
+}
+.ladder-step {
+  display: flex; align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-card);
+  position: relative;
+  overflow: hidden;
+}
+.ladder-step::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.ladder-step:nth-child(1)::before { background: var(--accent-green); }
+.ladder-step:nth-child(2)::before { background: var(--accent-blue); }
+.ladder-step:nth-child(3)::before { background: var(--accent-purple); }
+.ladder-step:nth-child(4)::before { background: var(--text-dim); }
+.ladder-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 600;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.ladder-step:nth-child(1) .ladder-num { background: rgba(52,211,153,0.15); color: var(--accent-green); }
+.ladder-step:nth-child(2) .ladder-num { background: rgba(79,143,255,0.15); color: var(--accent-blue); }
+.ladder-step:nth-child(3) .ladder-num { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
+.ladder-step:nth-child(4) .ladder-num { background: rgba(74,85,120,0.2); color: var(--text-secondary); }
+.ladder-label { font-size: 15px; font-weight: 500; }
+.ladder-detail { font-size: 12.5px; color: var(--text-secondary); margin-left: auto; }
+
+/* ── Example Box ── */
+.example-box {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-top: 16px;
+  max-width: 600px;
+  width: 100%;
+}
+.example-box .dim { color: var(--text-dim); }
+.example-box .val { color: var(--accent-cyan); }
+.example-box .win { color: var(--accent-green); font-weight: 600; }
+.example-box .lose { color: var(--text-dim); }
+
+/* ── Scenario Table ── */
+.scenario-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%; max-width: 1000px;
+  margin-top: 16px;
+}
+.scenario-item {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 20px 22px;
+  display: flex; gap: 14px;
+  align-items: flex-start;
+}
+.scenario-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.scenario-label { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.scenario-desc { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ── Shield Layers ── */
+.shield-layers {
+  display: flex; flex-direction: column;
+  gap: 14px; width: 100%; max-width: 800px;
+  margin-top: 16px;
+}
+.shield-layer {
+  display: flex; align-items: center; gap: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 22px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.shield-layer::after {
+  content: '';
+  position: absolute; right: -40px; top: -40px;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  opacity: 0.04;
+}
+.shield-layer:nth-child(1)::after { background: var(--accent-green); }
+.shield-layer:nth-child(2)::after { background: var(--accent-amber); }
+.shield-layer:nth-child(3)::after { background: var(--accent-blue); }
+.shield-num {
+  font-family: 'Instrument Serif', serif;
+  font-size: 36px;
+  font-style: italic;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 44px;
+}
+.shield-layer:nth-child(1) .shield-num { color: var(--accent-green); }
+.shield-layer:nth-child(2) .shield-num { color: var(--accent-amber); }
+.shield-layer:nth-child(3) .shield-num { color: var(--accent-blue); }
+.shield-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.shield-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ── UI Mockups ── */
+.ui-showcase {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  width: 100%; max-width: 1000px;
+  margin-top: 16px;
+}
+.ui-mock {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 20px;
+  text-align: center;
+  position: relative;
+}
+.ui-mock-toast {
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--accent-green);
+  margin: 12px 0;
+  display: flex; align-items: center; gap: 6px;
+  justify-content: center;
+}
+.ui-mock-popup {
+  background: var(--bg-surface);
+  border: 1px solid rgba(79, 143, 255, 0.2);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 12px 0;
+  font-size: 11px;
+}
+.ui-mock-popup .popup-title { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+.ui-mock-popup .popup-btn {
+  display: inline-block;
+  background: var(--accent-blue);
+  color: white;
+  font-size: 10px; font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+.ui-mock-popup .popup-x {
+  position: absolute; top: 6px; right: 8px;
+  font-size: 10px; color: var(--text-dim);
+}
+.ui-label {
+  font-size: 12px; font-weight: 600;
+  margin-bottom: 4px;
+}
+.ui-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* ── Scope Columns ── */
+.scope-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  width: 100%; max-width: 900px;
+  margin-top: 16px;
+}
+.scope-col {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 28px;
+}
+.scope-col-title {
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.scope-col-title .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.scope-item {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  padding: 6px 0;
+  display: flex; align-items: center; gap: 8px;
+  line-height: 1.4;
+}
+.scope-item::before {
+  content: '';
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.scope-in .scope-item::before { background: var(--accent-green); }
+.scope-out .scope-item::before { background: var(--text-dim); }
+
+/* ── Architecture ── */
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  width: 100%; max-width: 900px;
+  margin-top: 16px;
+}
+.arch-table {
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.arch-table-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; font-weight: 600;
+  color: var(--accent-cyan);
+  margin-bottom: 6px;
+}
+.arch-table-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.arch-table-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* ── State Model ── */
+.state-model {
+  display: flex; flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: center;
+}
+.state-field {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+.state-field.highlight { border-color: rgba(0,229,255,0.3); color: var(--accent-cyan); }
+
+/* ── Closing ── */
+.closing-quote {
+  font-family: 'Instrument Serif', serif;
+  font-size: clamp(24px, 3vw, 40px);
+  font-style: italic;
+  line-height: 1.4;
+  text-align: center;
+  max-width: 800px;
+  color: var(--text-primary);
+}
+.closing-detail {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 24px;
+  text-align: center;
+}
+.closing-detail a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+/* ── Version Cards ── */
+.version-cards {
+  display: flex; flex-direction: column;
+  gap: 14px; width: 100%; max-width: 800px;
+  margin-top: 16px;
+}
+.version-card {
+  display: flex; align-items: flex-start; gap: 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 22px 26px;
+}
+.version-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.version-card:nth-child(1) .version-badge { background: rgba(79,143,255,0.15); color: var(--accent-blue); }
+.version-card:nth-child(2) .version-badge { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
+.version-card:nth-child(3) .version-badge { background: rgba(248,113,113,0.15); color: var(--accent-red); }
+.version-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.version-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ── Nothing Else Badge ── */
+.nothing-else {
+  margin-top: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 10px 20px;
+  border: 1px dashed rgba(255,255,255,0.08);
+  border-radius: 10px;
+  text-align: center;
+}
+
+/* ── Title Slide ── */
+.title-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 500;
+  color: var(--accent-cyan);
+  padding: 6px 16px;
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 100px;
+  margin-bottom: 28px;
+  letter-spacing: 0.05em;
+}
+.title-badge .pulse {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.title-main {
+  font-size: clamp(40px, 6vw, 72px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.title-sub {
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 300;
+  color: var(--text-secondary);
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+.title-platforms {
+  display: flex; gap: 16px;
+  margin-top: 36px;
+}
+.title-platform {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 500;
+  color: var(--text-secondary);
+  padding: 8px 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: var(--glass);
+}
+
+/* ── Stagger animations ── */
+.slide.active .stagger { animation: fadeUp 0.5s ease forwards; opacity: 0; }
+.slide.active .stagger:nth-child(1) { animation-delay: 0.1s; }
+.slide.active .stagger:nth-child(2) { animation-delay: 0.2s; }
+.slide.active .stagger:nth-child(3) { animation-delay: 0.3s; }
+.slide.active .stagger:nth-child(4) { animation-delay: 0.35s; }
+.slide.active .stagger:nth-child(5) { animation-delay: 0.4s; }
+.slide.active .stagger:nth-child(6) { animation-delay: 0.45s; }
+.slide.active .stagger:nth-child(7) { animation-delay: 0.5s; }
+.slide.active .stagger:nth-child(8) { animation-delay: 0.55s; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .slide { padding: 30px 24px; }
+  .card-grid.cols-4,
+  .card-grid.cols-3 { grid-template-columns: 1fr 1fr; }
+  .scenario-grid { grid-template-columns: 1fr; }
+  .scope-cols { grid-template-columns: 1fr; }
+  .arch-grid { grid-template-columns: 1fr 1fr; }
+  .ui-showcase { grid-template-columns: 1fr 1fr; }
+  .title-platforms { flex-direction: column; align-items: center; }
+  .flow-pipeline { gap: 4px; }
+  .flow-node { padding: 10px 12px; font-size: 11px; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-mesh"></div>
+<div class="noise-overlay"></div>
+
+<div class="deck" id="deck">
+
+  <!-- ═══ SLIDE 1: Title ═══ -->
+  <div class="slide active" data-slide="0">
+    <div class="title-badge stagger"><span class="pulse"></span> PeerPlay — Merge Cruise</div>
+    <div class="title-main stagger">
+      <span class="gradient-text">Cloud Save</span><br>
+      Game Center & Google Play
+    </div>
+    <div class="title-sub stagger">Automatic Progress Backup & Restore — Zero Friction</div>
+    <div class="title-platforms stagger">
+      <div class="title-platform">🍎 Game Center (iOS)</div>
+      <div class="title-platform">🤖 Google Play Games (Android)</div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 2: The Problem ═══ -->
+  <div class="slide" data-slide="1">
+    <div class="slide-tag stagger">Why we need this</div>
+    <div class="slide-title stagger"><span class="gradient-text-warm">The Problem</span></div>
+    <div class="card-grid cols-3" style="margin-top: 28px;">
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #f87171, #f472b6);">
+        <span class="card-icon">📱</span>
+        <div class="card-title">Progress Lost on Reinstall</div>
+        <div class="card-body">Players reinstall or switch devices and start from zero. Hours of progress vanish. No recovery path.</div>
+      </div>
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #fbbf24, #f97316);">
+        <span class="card-icon">🔌</span>
+        <div class="card-title">No Cross-Device Sync</div>
+        <div class="card-body">Play on one device, nothing carries over. Phone to tablet is a fresh start. Players feel trapped on one device.</div>
+      </div>
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #a855f7, #6366f1);">
+        <span class="card-icon">📉</span>
+        <div class="card-title">Trust & Retention Suffer</div>
+        <div class="card-body">Players who lose progress churn. Fear of losing progress reduces engagement and spending confidence.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 3: Principles ═══ -->
+  <div class="slide" data-slide="2">
+    <div class="slide-tag stagger">Core principles</div>
+    <div class="slide-title stagger">Invisible by <span class="gradient-text">Design</span></div>
+    <div class="card-grid cols-4" style="margin-top: 20px;">
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #4f8fff, #00e5ff);">
+        <span class="card-icon">👁️</span>
+        <div class="card-title">Invisible</div>
+        <div class="card-body">No login screens. No buttons. No settings. Silent auto-connect on launch. Player never knows it's happening.</div>
+      </div>
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #34d399, #4f8fff);">
+        <span class="card-icon">🏆</span>
+        <div class="card-title">Progress Wins</div>
+        <div class="card-body">Higher chapter > higher credits > latest save > cloud wins tie. One method, all cases. Same logic everywhere.</div>
+      </div>
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #a855f7, #f472b6);">
+        <span class="card-icon">📦</span>
+        <div class="card-title">Nothing Deleted</div>
+        <div class="card-body">Losing saves archived to state_history. 30 saves + 7 daily snapshots per user. Support can always recover.</div>
+      </div>
+      <div class="card stagger" style="--card-accent: linear-gradient(90deg, #fbbf24, #f97316);">
+        <span class="card-icon">⏱️</span>
+        <div class="card-title">One Device</div>
+        <div class="card-body">Heartbeat every 10s enforces single-device play. Second device triggers re-login until one closes.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 4: How It Works ═══ -->
+  <div class="slide" data-slide="3">
+    <div class="slide-tag stagger">Connection flow</div>
+    <div class="slide-title stagger">How It <span class="gradient-text">Works</span></div>
+    <div class="flow-pipeline stagger">
+      <div class="flow-step">
+        <div class="flow-node"><span class="flow-icon">🚀</span>App Launch</div>
+        <span class="flow-arrow">→</span>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node"><span class="flow-icon">🔍</span>Silent Platform Detect</div>
+        <span class="flow-arrow">→</span>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node"><span class="flow-icon">🔗</span>Bind platform_id ↔ distinct_id</div>
+        <span class="flow-arrow">→</span>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node"><span class="flow-icon">☁️</span>Upload to Cloud</div>
+        <span class="flow-arrow">→</span>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node"><span class="flow-icon">✅</span>Sync Toast (once)</div>
+      </div>
+    </div>
+    <div class="slide-tag stagger" style="margin-top: 28px; margin-bottom: 12px;">State model</div>
+    <div class="state-model stagger">
+      <span class="state-field highlight">distinct_id</span>
+      <span class="state-field">state_blob</span>
+      <span class="state-field">checksum (SHA-256)</span>
+      <span class="state-field highlight">sequence_number</span>
+      <span class="state-field highlight">chapter</span>
+      <span class="state-field">tasks_completed</span>
+      <span class="state-field highlight">credits_balance</span>
+      <span class="state-field">version</span>
+      <span class="state-field">max_supported_chapter</span>
+      <span class="state-field">state_schema_version</span>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 5: Comparison Rule ═══ -->
+  <div class="slide" data-slide="4">
+    <div class="slide-tag stagger">Decision logic</div>
+    <div class="slide-title stagger">State <span class="gradient-text">Comparison</span> Rule</div>
+    <div style="display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 1000px;">
+      <div>
+        <div class="ladder stagger">
+          <div class="ladder-step">
+            <span class="ladder-num">1</span>
+            <span class="ladder-label">Higher scapes progress</span>
+            <span class="ladder-detail">chapter + tasks completed</span>
+          </div>
+          <div class="ladder-step">
+            <span class="ladder-num">2</span>
+            <span class="ladder-label">Higher credits balance</span>
+            <span class="ladder-detail">if progress is identical</span>
+          </div>
+          <div class="ladder-step">
+            <span class="ladder-num">3</span>
+            <span class="ladder-label">Latest state</span>
+            <span class="ladder-detail">by sequence_number</span>
+          </div>
+          <div class="ladder-step">
+            <span class="ladder-num">4</span>
+            <span class="ladder-label">Cloud wins ties</span>
+            <span class="ladder-detail">everything equal</span>
+          </div>
+        </div>
+      </div>
+      <div class="example-box stagger">
+        <div style="font-size: 11px; color: var(--accent-cyan); margin-bottom: 10px; letter-spacing: 0.1em; text-transform: uppercase;">Example</div>
+        <div><span class="dim">Device A:</span> chapter <span class="lose">25</span></div>
+        <div><span class="dim">Cloud:</span>&nbsp;&nbsp;&nbsp;&nbsp; chapter <span class="val">28</span></div>
+        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--glass-border);">
+          <span class="dim">Step 1:</span> 28 > 25 → <span class="win">Cloud wins ✅</span>
+        </div>
+        <div style="margin-top: 6px;">
+          <span class="dim">Device A chapter 25</span> → <span class="dim">archived</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 6: Version Management ═══ -->
+  <div class="slide" data-slide="5">
+    <div class="slide-tag stagger">Compatibility</div>
+    <div class="slide-title stagger">Version <span class="gradient-text">Management</span></div>
+    <div class="version-cards stagger">
+      <div class="version-card">
+        <span class="version-badge">FLOOR</span>
+        <div>
+          <div class="version-title">cloud_save_min_version</div>
+          <div class="version-desc">Server-side floor — any version >= this is automatically supported. New builds never accidentally excluded. Only bumped on breaking schema changes.</div>
+        </div>
+      </div>
+      <div class="version-card">
+        <span class="version-badge">PROMPT</span>
+        <div>
+          <div class="version-title">Dismissible Update Prompt</div>
+          <div class="version-desc">Cloud needs newer version → player sees popup. Can dismiss and keep playing locally. Sync pauses. Re-shown every login until player updates.</div>
+        </div>
+      </div>
+      <div class="version-card">
+        <span class="version-badge">RULE</span>
+        <div>
+          <div class="version-title">Newer cloud state NEVER loaded on older device</div>
+          <div class="version-desc">Eliminates unknown items, broken rendering, and crashes. The older client never encounters content it can't handle.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 7: Scenarios ═══ -->
+  <div class="slide" data-slide="6">
+    <div class="slide-tag stagger">What happens when...</div>
+    <div class="slide-title stagger">Key <span class="gradient-text">Scenarios</span></div>
+    <div class="scenario-grid">
+      <div class="scenario-item stagger">
+        <span class="scenario-icon">📲</span>
+        <div>
+          <div class="scenario-label">Reinstall / New Device</div>
+          <div class="scenario-desc">Tutorial skipped entirely. Cloud save restored. "Welcome back! Progress restored" toast shown.</div>
+        </div>
+      </div>
+      <div class="scenario-item stagger">
+        <span class="scenario-icon">📡</span>
+        <div>
+          <div class="scenario-label">Goes Offline Mid-Session</div>
+          <div class="scenario-desc">Toast warns player. Saves locally. Progress-based comparison on reconnect. Higher chapter wins.</div>
+        </div>
+      </div>
+      <div class="scenario-item stagger">
+        <span class="scenario-icon">🔄</span>
+        <div>
+          <div class="scenario-label">Version Mismatch</div>
+          <div class="scenario-desc">Dismissible update popup. Dismiss = play locally, sync pauses. Auto-resumes after updating.</div>
+        </div>
+      </div>
+      <div class="scenario-item stagger">
+        <span class="scenario-icon">📱📱</span>
+        <div>
+          <div class="scenario-label">Two Devices Simultaneous</div>
+          <div class="scenario-desc">Heartbeat ping-pong. Both devices push each other to re-login until one closes. Winner holds session.</div>
+        </div>
+      </div>
+      <div class="scenario-item stagger">
+        <span class="scenario-icon">🔓</span>
+        <div>
+          <div class="scenario-label">Platform Sign-Out</div>
+          <div class="scenario-desc">Gameplay continues unchanged. Sync stops silently. Binding preserved. Auto-reconnects on sign-in.</div>
+        </div>
+      </div>
+      <div class="scenario-item stagger">
+        <span class="scenario-icon">💾</span>
+        <div>
+          <div class="scenario-label">Save Corrupted</div>
+          <div class="scenario-desc">Local corrupted → cloud loaded. Cloud corrupted → local kept. Both → state_history backup. Nothing lost.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 8: Safety ═══ -->
+  <div class="slide" data-slide="7">
+    <div class="slide-tag stagger">Protection</div>
+    <div class="slide-title stagger">Three <span class="gradient-text">Safety</span> Layers</div>
+    <div class="shield-layers">
+      <div class="shield-layer stagger">
+        <span class="shield-num">1</span>
+        <div>
+          <div class="shield-title">Prevention — Min-Floor Model</div>
+          <div class="shield-desc">New versions automatically supported. Silent disconnect only for old versions below the floor. A new build can never be accidentally excluded from cloud save.</div>
+        </div>
+      </div>
+      <div class="shield-layer stagger">
+        <span class="shield-num">2</span>
+        <div>
+          <div class="shield-title">Detection — Server Alert on Excluded Version</div>
+          <div class="shield-desc">If a newer version is excluded (likely config mistake), server fires alert to Slack/PagerDuty. Team can immediately fix. Player sees update prompt, not silent disconnect.</div>
+        </div>
+      </div>
+      <div class="shield-layer stagger">
+        <span class="shield-num">3</span>
+        <div>
+          <div class="shield-title">Data Protection — Progress Always Wins</div>
+          <div class="shield-desc">State with higher chapter/credits always wins regardless of timing, upload order, or sequence numbers. Even after days of disconnection, the better state prevails. Losing state always archived.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 9: UI Elements ═══ -->
+  <div class="slide" data-slide="8">
+    <div class="slide-tag stagger">Player-facing</div>
+    <div class="slide-title stagger">Only <span class="gradient-text">4</span> UI Elements</div>
+    <div class="ui-showcase">
+      <div class="ui-mock stagger">
+        <div class="ui-label">Sync Toast</div>
+        <div class="ui-mock-toast">✓ Progress synced via Game Center</div>
+        <div class="ui-desc">One-time, 3 sec, auto-dismiss</div>
+      </div>
+      <div class="ui-mock stagger">
+        <div class="ui-label">Signed-In Toast</div>
+        <div class="ui-mock-toast" style="background: rgba(79,143,255,0.1); border-color: rgba(79,143,255,0.2); color: var(--accent-blue);">☁️ Connected</div>
+        <div class="ui-desc">1 sec, every background return</div>
+      </div>
+      <div class="ui-mock stagger">
+        <div class="ui-label">Update Prompt</div>
+        <div class="ui-mock-popup" style="position: relative;">
+          <span class="popup-x">✕</span>
+          <div class="popup-title">Update Available</div>
+          <div style="font-size: 10px; color: var(--text-secondary); margin: 4px 0;">Your saved game is on a newer version.</div>
+          <span class="popup-btn">Update Now</span>
+        </div>
+        <div class="ui-desc">Dismissible, version mismatch</div>
+      </div>
+      <div class="ui-mock stagger">
+        <div class="ui-label">Offline Toast</div>
+        <div class="ui-mock-toast" style="background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.2); color: var(--accent-amber);">⚠ Not connected ✕</div>
+        <div class="ui-desc">Dismissible, mid-session only</div>
+      </div>
+    </div>
+    <div class="nothing-else stagger">No lobby badge. No settings toggle. No login screen. Nothing else.</div>
+  </div>
+
+  <!-- ═══ SLIDE 10: Scope ═══ -->
+  <div class="slide" data-slide="9">
+    <div class="slide-tag stagger">Boundaries</div>
+    <div class="slide-title stagger">MVP <span class="gradient-text">Scope</span></div>
+    <div class="scope-cols">
+      <div class="scope-col scope-in stagger">
+        <div class="scope-col-title"><span class="dot" style="background: var(--accent-green);"></span> In Scope (MVP)</div>
+        <div class="scope-item">Silent auto-login on launch</div>
+        <div class="scope-item">Platform account binding</div>
+        <div class="scope-item">Cloud save & restore with comparison</div>
+        <div class="scope-item">State archival (nothing deleted)</div>
+        <div class="scope-item">Sync & signed-in toasts</div>
+        <div class="scope-item">Dismissible update prompt</div>
+        <div class="scope-item">Session locking (heartbeat)</div>
+        <div class="scope-item">Offline detection & recovery</div>
+        <div class="scope-item">Reinstall recovery (skip FTUE)</div>
+        <div class="scope-item">Full analytics & BI events</div>
+        <div class="scope-item">Admin restore tooling</div>
+      </div>
+      <div class="scope-col scope-out stagger">
+        <div class="scope-col-title"><span class="dot" style="background: var(--text-dim);"></span> Out of Scope (Post-MVP)</div>
+        <div class="scope-item">Platform account switching</div>
+        <div class="scope-item">Cross-platform merging (iOS ↔ Android)</div>
+        <div class="scope-item">Facebook / Apple Connect integration</div>
+        <div class="scope-item">Manual login / logout</div>
+        <div class="scope-item">Achievements & leaderboards</div>
+        <div class="scope-item">Social features</div>
+        <div class="scope-item">Onboarding or forced login messaging</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 11: Architecture ═══ -->
+  <div class="slide" data-slide="10">
+    <div class="slide-tag stagger">Server-side</div>
+    <div class="slide-title stagger"><span class="gradient-text">Architecture</span></div>
+    <div class="arch-grid">
+      <div class="arch-table stagger">
+        <div class="arch-table-name">active_states</div>
+        <div class="arch-table-desc">One row per user — the canonical current state</div>
+        <div class="arch-table-key">KEY: distinct_id</div>
+      </div>
+      <div class="arch-table stagger">
+        <div class="arch-table-name">state_history</div>
+        <div class="arch-table-desc">Append-only log of ALL state changes. 30 saves + 7 daily snapshots.</div>
+        <div class="arch-table-key">KEY: distinct_id • sequence_number</div>
+      </div>
+      <div class="arch-table stagger">
+        <div class="arch-table-name">platform_bindings</div>
+        <div class="arch-table-desc">Maps platform_id → distinct_id for account linking</div>
+        <div class="arch-table-key">KEY: platform_id</div>
+      </div>
+      <div class="arch-table stagger">
+        <div class="arch-table-name">session_locks</div>
+        <div class="arch-table-desc">Active session heartbeats. One session per user.</div>
+        <div class="arch-table-key">KEY: distinct_id</div>
+      </div>
+      <div class="arch-table stagger">
+        <div class="arch-table-name">device_id_history</div>
+        <div class="arch-table-desc">All distinct_ids used on each device. For restoring previous ID.</div>
+        <div class="arch-table-key">KEY: device_id • distinct_id</div>
+      </div>
+      <div class="arch-table stagger">
+        <div class="arch-table-name">device_activity</div>
+        <div class="arch-table-desc">Tracks last_server_activity per device. Server-side timestamps only.</div>
+        <div class="arch-table-key">KEY: device_id</div>
+      </div>
+    </div>
+    <div class="stagger" style="margin-top: 24px; padding: 14px 24px; border: 1px solid rgba(0,229,255,0.15); border-radius: 10px; background: rgba(0,229,255,0.03);">
+      <span style="font-size: 14px; font-weight: 600;">🏗️ Key Rule:</span>
+      <span style="font-size: 14px; color: var(--text-secondary);"> Server is the single source of truth. Devices compare only against server state, never against each other.</span>
+    </div>
+  </div>
+
+  <!-- ═══ SLIDE 12: Closing ═══ -->
+  <div class="slide" data-slide="11">
+    <div class="closing-quote stagger">
+      Same infrastructure as FB/Apple Connect.<br>
+      <span class="gradient-text">One comparison method.</span><br>
+      Zero friction.<br>
+      <em>Nothing ever lost.</em>
+    </div>
+    <div class="closing-detail stagger">
+      Jira: <a href="https://peerplay-games.atlassian.net/browse/MC-2689">MC-2689</a>
+    </div>
+    <div class="title-platforms stagger" style="margin-top: 32px;">
+      <div class="title-platform">🍎 Game Center</div>
+      <div class="title-platform">🤖 Google Play Games</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Controls ── -->
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+<div class="slide-counter"><span class="current" id="currentSlide">01</span> / <span id="totalSlides">12</span></div>
+<div class="nav-arrows">
+  <button class="nav-btn" onclick="navigate(-1)">←</button>
+  <button class="nav-btn" onclick="navigate(1)">→</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+let current = 0;
+let transitioning = false;
+
+function goTo(index) {
+  if (transitioning || index === current || index < 0 || index >= total) return;
+  transitioning = true;
+
+  const dir = index > current ? 1 : -1;
+  const prev = slides[current];
+  const next = slides[index];
+
+  // Exit the previous slide
+  prev.classList.remove('active');
+  prev.classList.add(dir > 0 ? 'exit-up' : 'exit-down');
+
+  // Prepare the next slide to enter from the correct direction
+  // Temporarily disable transitions so we can set start position instantly
+  next.style.transition = 'none';
+  next.classList.remove('exit-up', 'exit-down');
+  if (dir > 0) {
+    // Going forward: next slide enters from below (default transform)
+    next.classList.remove('enter-from-above');
+  } else {
+    // Going backward: next slide enters from above
+    next.classList.add('enter-from-above');
+  }
+  next.offsetHeight; // force reflow to apply start position
+
+  // Re-enable transitions and activate
+  next.style.transition = '';
+
+  // Reset stagger animations
+  next.querySelectorAll('.stagger').forEach(el => {
+    el.style.animation = 'none';
+    el.offsetHeight;
+    el.style.animation = '';
+  });
+
+  // Small delay to ensure the browser registers the start position before animating
+  requestAnimationFrame(() => {
+    next.classList.remove('enter-from-above');
+    next.classList.add('active');
+  });
+
+  current = index;
+  document.getElementById('currentSlide').textContent = String(current + 1).padStart(2, '0');
+  document.getElementById('progressFill').style.width = ((current + 1) / total * 100) + '%';
+
+  setTimeout(() => {
+    prev.classList.remove('exit-up', 'exit-down');
+    transitioning = false;
+  }, 550);
+}
+
+function navigate(dir) { goTo(current + dir); }
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); navigate(1); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); navigate(-1); }
+  if (e.key === 'Home') { e.preventDefault(); goTo(0); }
+  if (e.key === 'End') { e.preventDefault(); goTo(total - 1); }
+});
+
+// Click sides
+document.addEventListener('click', e => {
+  if (e.target.closest('.nav-btn') || e.target.closest('a')) return;
+  const x = e.clientX / window.innerWidth;
+  if (x > 0.7) navigate(1);
+  else if (x < 0.3) navigate(-1);
+});
+
+// Touch swipe
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', e => {
+  const diff = touchStartX - e.changedTouches[0].clientX;
+  if (Math.abs(diff) > 50) navigate(diff > 0 ? 1 : -1);
+});
+
+// Init
+document.getElementById('progressFill').style.width = (1 / total * 100) + '%';
+</script>
+</body>
+</html>
